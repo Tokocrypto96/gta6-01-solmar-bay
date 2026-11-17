@@ -14,14 +14,23 @@ Method (deterministic, stdlib only, no network):
      viewers_1) as the shape, and the cross-peer standard deviation of the
      same log-ratios as the spread. Median forecast = p1 * exp(shape_h);
      quantiles = median * exp(z_tau * spread_h).
-  3. Fallbacks keep the entry valid no matter what the case holds: if the
+  3. Anchor-size shape adjustment: a small hour-1 print means the NZ/AU
+     midnight wave was small, so the bulk of the audience still arrives in
+     the later timezone waves and the evening ramp is steeper -- and vice
+     versa for a huge hour-1 print. Across the peer group, log(hour-1
+     viewers) correlates about -0.4..-0.5 with the evening log-ratio
+     (h12 -0.44, h19 -0.52, h21 -0.63), so the shape is shifted by
+     0.4 * (median peer log hour-1 - log hour-1 print). On the 4 practice
+     launches this cuts Wolverine's loss from 0.4083 to 0.2343 and the
+     overall pinball from 0.2459 to 0.1828, with no case regressing.
+  4. Fallbacks keep the entry valid no matter what the case holds: if the
      peer group is too small it relaxes to all "comparable" games, then to
      all launch-like comparables; if hour 1 has no print it falls back to
      the last hourly history point, then to 1 viewer.
 
 Backtest on the kit's 4 practice launches (pinball loss, lower better):
-  baseline (starter persistence) 0.3871 -- this entry 0.2459.
-  Per case: Wolverine 0.4083, RDR2 0.1393, GoW Ragnarok 0.2059, Spider-Man 2 0.2300.
+  baseline (starter persistence) 0.3871 -- this entry 0.1828.
+  Per case: Wolverine 0.2343, RDR2 0.1404, GoW Ragnarok 0.1318, Spider-Man 2 0.2246.
 """
 
 import json
@@ -38,6 +47,11 @@ OUTPUT_DIR = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
 
 LEVELS = [0.05, 0.25, 0.5, 0.75, 0.95]
 Z = [-1.645, -0.674, 0.0, 0.674, 1.645]
+# Slope of the anchor-size effect (see method step 3 in the docstring):
+# per-hour peer regressions give -0.33 (h12) .. -0.50 (h21); 0.4 sits
+# mid-range and is the backtest optimum (0.3 -> 0.1861, 0.4 -> 0.1828,
+# 0.5 -> 0.1877), a broad minimum rather than a knife-edge fit.
+ANCHOR_BETA = 0.4
 
 
 def parse_dt(s):
@@ -145,6 +159,14 @@ def forecast_case(case):
     p1 = hour1_print(case)
     peers = peer_curves(case)
     hours = [row["hour"] for row in case.get("forecast", [])] or list(range(2, 25))
+    # Typical peer hour-1 size; the anchor adjustment (method step 3) is
+    # zero when the peer group is empty, so the no-comparables fallback
+    # keeps its old behaviour.
+    if peers:
+        med_log_h1 = median([math.log(c[1]) for c in peers if 1 in c])
+        anchor_shift = ANCHOR_BETA * (med_log_h1 - math.log(p1))
+    else:
+        anchor_shift = 0.0
     out = {"hours": []}
     for h in sorted(hours):
         ratios = []
@@ -163,6 +185,7 @@ def forecast_case(case):
         spread = max(spread, 0.10)
         if len(ratios) < 4:
             spread = max(spread, 0.30)
+        shape += anchor_shift
         med = p1 * math.exp(shape)
         qs = []
         for z in Z:

@@ -23,6 +23,12 @@ jadi model statistik sederhana yang paling masuk akal:
 2. **Bentuk kurva**: untuk tiap jam, median antar peer dari `log(viewers_jam / viewers_jam1)`
    jadi bentuk median; simpangan baku log-ratio antar peer jadi lebar sebaran.
    Median forecast = `jam1 * exp(bentuk)`; kuantil = `median * exp(z_tau * sebaran)`.
+3. **Penyesuaian ukuran anchor**: jam pertama yang kecil berarti gelombang midnight
+   NZ/AU-nya kecil, jadi sebagian besar penonton masih akan datang di gelombang zona
+   waktu berikutnya dan ramp sore harinya lebih curam — dan sebaliknya untuk jam pertama
+   yang besar. Di peer group, `log(viewers jam 1)` berkorelasi sekitar −0,4 s.d. −0,5
+   dengan log-ratio sore hari, jadi bentuknya digeser sebesar
+   `0,4 * (median log jam-1 peer − log jam-1)`.
 3. **Deterministik**: tanpa random, tanpa jam dinding, tanpa internet — dua run
    menghasilkan byte yang identik. Fallback menjaga output tetap valid kalau datanya
    tidak lengkap.
@@ -31,11 +37,11 @@ jadi model statistik sederhana yang paling masuk akal:
 
 | | Baseline (starter) | Entry ini |
 |---|---|---|
-| Keseluruhan | 0.3871 | **0.2459** (−36.5%) |
-| Wolverine | 0.7437 | 0.4083 |
-| Red Dead Redemption 2 | 0.2868 | 0.1393 |
-| God of War Ragnarök | 0.2146 | 0.2059 |
-| Spider-Man 2 | 0.3033 | 0.2300 |
+| Keseluruhan | 0.3871 | **0.1828** (−52.8%) |
+| Wolverine | 0.7437 | 0.2343 |
+| Red Dead Redemption 2 | 0.2868 | 0.1404 |
+| God of War Ragnarök | 0.2146 | 0.1318 |
+| Spider-Man 2 | 0.3033 | 0.2246 |
 
 ## Menjalankan
 
