@@ -3,8 +3,8 @@
 // Each mission is a list of steps (drive somewhere, hold a spot, survive the heat);
 // the HUD shows the current step, the beacon and the minimap show where to go.
 import * as THREE from 'three';
-import { BRIBE_PER_STAR, PISTOL_PRICE, REPAIR_PRICE, SHELL_COUNT, SHELL_REWARD } from './config.js';
-import { randRange } from './rng.js';
+import { BRIBE_PER_STAR, FARE_PAY_MAX, FARE_PAY_MIN, HEAL_PRICE, PISTOL_PRICE, REPAIR_PRICE, SHELL_COUNT, SHELL_REWARD } from './config.js';
+import { pick, randRange } from './rng.js';
 
 /** The six story missions, in order. */
 export const MISSION_DEFS = [
@@ -109,7 +109,7 @@ export class Missions {
     this.fareCustomer = null;
     this.fareTarget = null;
     this.ctx.toast(def.title, `${def.giver}: ${def.brief}`);
-    this.ctx.audio?.missionDone();
+    this.ctx.audio?.missionStart();
     this.beginStep();
   }
 
@@ -174,7 +174,7 @@ export class Missions {
   /** Pick a random drop-off place for a fare. */
   randomFareTarget() {
     const names = ['hospital', 'beach', 'bank', 'pizzaria', 'safehouse', 'gunShop', 'paintShop'];
-    const name = names[Math.floor(Math.random() * names.length)];
+    const name = pick(Math.random, names);
     const p = this.ctx.city.places[name];
     return { x: p.x, z: p.z, name };
   }
@@ -204,6 +204,8 @@ export class Missions {
 
   fail(reason) {
     this.active = false;
+    this.holdTimer = 0;
+    this.timer = 0;
     this.ctx.toast('JOB FAILED', reason);
     this.ctx.audio?.missionFail();
     this.ctx.police.clear();
@@ -276,7 +278,7 @@ export class Missions {
           }
         } else if (this.fareTarget) {
           if (distTo(this.fareTarget) < 9) {
-            const pay = 60 + Math.floor(Math.random() * 40);
+            const pay = FARE_PAY_MIN + Math.floor(Math.random() * (FARE_PAY_MAX - FARE_PAY_MIN + 1));
             this.ctx.addCash(pay);
             this.ctx.feed(`Fare paid +$${pay}`);
             this.ctx.audio?.cash();
@@ -311,7 +313,7 @@ export function shopPrompt(G) {
     return police.stars === 0 ? 'The Fixer — no heat on you right now' : `The Fixer — press E to clear ${police.stars} star${police.stars > 1 ? 's' : ''} ($${police.stars * BRIBE_PER_STAR})`;
   }
   if (!player.inCar && near('hospital')) {
-    return player.health >= player.maxHealth ? 'Solmar General — you are in full health' : 'Solmar General — press E to heal up ($100)';
+    return player.health >= player.maxHealth ? 'Solmar General — you are in full health' : `Solmar General — press E to heal up ($${HEAL_PRICE})`;
   }
   if (player.inCar && near('paintShop')) {
     return `Paint Shop — press E to respray + repair ($${REPAIR_PRICE})`;
@@ -346,8 +348,8 @@ export function useShop(G) {
     return true;
   }
   if (!player.inCar && near('hospital') && player.health < player.maxHealth) {
-    if (player.cash < 100) { G.toast('NOT ENOUGH CASH', 'Treatment costs $100.'); return true; }
-    player.cash -= 100;
+    if (player.cash < HEAL_PRICE) { G.toast('NOT ENOUGH CASH', `Treatment costs $${HEAL_PRICE}.`); return true; }
+    player.cash -= HEAL_PRICE;
     player.health = player.maxHealth;
     G.toast('PATCHED UP', 'Full health. Try to keep it.');
     audio?.pickup();

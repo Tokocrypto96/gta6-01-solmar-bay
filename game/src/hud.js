@@ -172,6 +172,12 @@ export class Hud {
       const [x, z] = toMap(car.x, car.z);
       ctx.fillRect(x - 1.5, z - 1.5, 3, 3);
     }
+    // Parked cars (stealable): dimmer dots, so the player can spot a ride.
+    ctx.fillStyle = 'rgba(207,216,234,0.55)';
+    for (const car of G.parkedCars) {
+      const [x, z] = toMap(car.x, car.z);
+      ctx.fillRect(x - 1.5, z - 1.5, 3, 3);
+    }
     // Police: flashing blue/red squares.
     const flash = Math.floor(performance.now() / 300) % 2 === 0;
     ctx.fillStyle = flash ? '#4d7cff' : '#ff5347';

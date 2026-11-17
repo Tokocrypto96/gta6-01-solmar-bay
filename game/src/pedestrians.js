@@ -49,6 +49,7 @@ export class Ped {
     this.waitTimer = 0;
     this.fleeing = false;
     this.fleeTimer = 0;
+    this.fleeFrom = null; // { x, z } the thing they run away from
     this.down = false;
     this.downTimer = 0;
     this.isCop = false;
@@ -137,10 +138,13 @@ export class Pedestrians {
       if (dx * dx + dz * dz < radius * radius) {
         ped.fleeing = true;
         ped.fleeTimer = 3 + this.rng() * 2;
+        ped.fleeFrom = { x, z };
       }
     }
   }
 
+  /** Per-frame crowd update. `danger` is a fast car closing in ({x, z} or
+   *  null): peds dive out of its way instead of strolling into it. */
   update(dt, playerPos, danger) {
     for (const ped of this.peds) {
       if (ped.down) {
@@ -153,14 +157,25 @@ export class Pedestrians {
         continue;
       }
       if (ped.isCustomer) { ped.animate(dt); continue; }
+      // A speeding car bears down: flee from it, not from the player.
+      if (danger && !ped.fleeing) {
+        const dx = ped.x - danger.x;
+        const dz = ped.z - danger.z;
+        if (dx * dx + dz * dz < 49) {
+          ped.fleeing = true;
+          ped.fleeTimer = 2.5;
+          ped.fleeFrom = { x: danger.x, z: danger.z };
+        }
+      }
       let tx;
       let tz;
       let speed = ped.speed;
       if (ped.fleeing) {
         ped.fleeTimer -= dt;
         if (ped.fleeTimer <= 0) ped.fleeing = false;
-        const dx = ped.x - playerPos.x;
-        const dz = ped.z - playerPos.z;
+        const from = ped.fleeFrom ?? playerPos;
+        const dx = ped.x - from.x;
+        const dz = ped.z - from.z;
         const d = Math.max(1, Math.hypot(dx, dz));
         tx = ped.x + (dx / d) * 20;
         tz = ped.z + (dz / d) * 20;

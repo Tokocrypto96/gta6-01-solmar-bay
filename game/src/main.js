@@ -2,7 +2,7 @@
 // together, runs the third-person camera, the steal-a-car interaction, the crime
 // detection, the screens (title / pause / busted / wasted) and the save.
 import * as THREE from 'three';
-import { BEACH_Z, CITY_HALF, DEFAULT_SEED, PITCH, START_CASH } from './config.js';
+import { BEACH_Z, CITY_HALF, DEFAULT_SEED, PITCH, START_CASH, AUTOSAVE_SECONDS } from './config.js';
 import { mulberry32, pick } from './rng.js';
 import { Input } from './input.js';
 import { AudioEngine } from './audio.js';
@@ -135,6 +135,13 @@ function applySave(data) {
   G.player.pistol = data.pistol;
   G.missions.index = data.missionIndex;
   G.missions.done = data.missionDone;
+  // Resume the mission where it stopped, not from its first step: the save
+  // now carries the step, the active flag and the countdown. beginStep
+  // re-spawns what the step needs (a fare customer, the wanted heat).
+  G.missions.stepIndex = data.missionStep ?? 0;
+  G.missions.active = !!data.missionActive;
+  G.missions.timer = data.missionTimer ?? (G.missions.def?.timer ?? 0);
+  if (G.missions.active) G.missions.beginStep();
   G.shells.setCollected(data.shells);
   G.totalEarned = data.totalEarned ?? 0;
   G.player.pos.set(data.player.x, 0, data.player.z);
@@ -152,9 +159,10 @@ function resetNewGame() {
   G.missions.index = 0;
   G.missions.done = false;
   G.missions.active = false;
+  G.missions.stepIndex = 0;
+  G.missions.timer = 0;
   G.police.clear();
   G.totalEarned = 0;
-  G.shells.setCollected(0);
   for (const item of G.shells.items) {
     item.taken = false;
     item.mesh.visible = true;
@@ -169,24 +177,69 @@ function startPlaying() {
   G.hud.toast('SOLMAR BAY', 'Press Enter to start your first job for Rico.');
 }
 
+/** One blip for every menu button (audio starts on the gesture, so it plays). */
+function menuClick() {
+  G.audio.start();
+  G.audio.click();
+}
+
+/** Pause the game: shared by the P key and the tab-hidden auto-pause. */
+function pauseGame() {
+  if (G.state !== 'play') return;
+  G.state = 'paused';
+  G.audio.setEngine(false, 0); // don't leave the engine humming while paused
+  document.getElementById('pauseStats').textContent =
+    `Cash $${Math.floor(G.player.cash)} · Jobs done ${G.missions.index}/6 · Shells ${G.shells.collected}/20 · Wanted ${G.police.stars}★`;
+  showScreen('paused');
+}
+
+/** Title-screen save line: what CONTINUE would load, if anything. */
+function updateSaveInfo() {
+  const el = document.getElementById('saveInfo');
+  const data = loadSave();
+  el.textContent = data
+    ? `Saved game: $${Math.floor(data.cash)} · Job ${Math.min(data.missionIndex + 1, 6)}/6 · ${data.shells}/20 shells`
+    : 'No saved game yet — start a new one.';
+}
+updateSaveInfo();
+
+// Enter on the title screen starts the game (Continue if there is a save).
+addEventListener('keydown', (e) => {
+  if (G.state === 'title' && e.code === 'Enter') {
+    if (!btnContinue.disabled) btnContinue.click();
+    else btnNew.click();
+  }
+});
+
+// Alt-tabbing away pauses instead of letting the city (and the wanted
+// level) run while the player is gone.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseGame();
+});
+
 btnContinue.disabled = !hasSave();
 btnContinue.addEventListener('click', () => {
+  menuClick();
   const data = loadSave();
   if (data) applySave(data);
   startPlaying();
 });
 btnNew.addEventListener('click', () => {
+  menuClick();
   resetNewGame();
   startPlaying();
 });
 btnHow.addEventListener('click', () => {
+  menuClick();
   howKeys.style.display = howKeys.style.display === 'none' ? 'block' : 'none';
 });
 document.getElementById('btnResume').addEventListener('click', () => {
+  menuClick();
   G.state = 'play';
   showScreen('play');
 });
 document.getElementById('btnRestartMission').addEventListener('click', () => {
+  menuClick();
   if (G.missions.def) {
     G.missions.fail('Mission restarted.');
     G.missions.start();
@@ -195,12 +248,15 @@ document.getElementById('btnRestartMission').addEventListener('click', () => {
   showScreen('play');
 });
 document.getElementById('btnSaveQuit').addEventListener('click', () => {
+  menuClick();
   saveGame(G);
   G.state = 'title';
   btnContinue.disabled = !hasSave();
+  updateSaveInfo();
   showScreen('title');
 });
 document.getElementById('btnRespawn').addEventListener('click', () => {
+  menuClick();
   const place = G.city.places[G.state === 'busted' ? 'policeHQ' : 'hospital'];
   G.player.pos.set(place.x, 0, place.z);
   G.player.health = G.player.maxHealth;
@@ -348,12 +404,7 @@ function animate() {
 
   if (G.state === 'play' && !G.frozen) {
     // Global keys.
-    if (input.wasPressed('KeyP') || input.wasPressed('Escape')) {
-      G.state = 'paused';
-      document.getElementById('pauseStats').textContent =
-        `Cash $${Math.floor(G.player.cash)} · Jobs done ${G.missions.index}/6 · Shells ${G.shells.collected}/20 · Wanted ${G.police.stars}★`;
-      showScreen('paused');
-    }
+    if (input.wasPressed('KeyP') || input.wasPressed('Escape')) pauseGame();
     if (input.wasPressed('KeyM')) G.audio.setMuted(!G.audio.muted);
     if (input.wasPressed('KeyH')) G.hud.toggleHidden();
     if (input.wasPressed('Enter') && !G.missions.active && !G.missions.done) G.missions.start();
@@ -426,13 +477,17 @@ function animate() {
         }
       }
     } else {
-      G.player.updateOnFoot(input, dt, G.city, G.camYaw);
+      G.player.updateOnFoot(input, dt, G.city, G.camYaw, [...G.traffic.cars, ...G.parkedCars, ...G.police.cars]);
       G.audio.setEngine(false, 0);
     }
 
     // World systems.
     G.traffic.update(dt, G.player.inCar, G.peds.peds);
-    G.peds.update(dt, G.player.pos, null);
+    // A speeding player car is the danger peds dive away from.
+    const dangerCar = G.player.inCar && Math.abs(G.player.inCar.speed) > 5
+      ? { x: G.player.inCar.x, z: G.player.inCar.z }
+      : null;
+    G.peds.update(dt, G.player.pos, dangerCar);
     G.police.update(dt, G.player, G.player.inCar, G.traffic.cars, G.audio, onBusted, onWasted);
     G.police.placeForceNear(G.player.x, G.player.z);
     G.missions.update(dt, G);
@@ -465,7 +520,7 @@ function animate() {
 
     // Autosave.
     G.autosaveTimer += dt;
-    if (G.autosaveTimer > 15) {
+    if (G.autosaveTimer > AUTOSAVE_SECONDS) {
       G.autosaveTimer = 0;
       saveGame(G);
     }
@@ -482,8 +537,9 @@ function animate() {
     }
   }
 
-  // Ocean shimmer.
+  // Ocean shimmer + the yacht bobbing at anchor.
   if (G.city.ocean) G.city.ocean.position.y = -0.15 + Math.sin(performance.now() / 1400) * 0.08;
+  if (G.city.yacht) G.city.yacht.position.y = Math.sin(performance.now() / 1200) * 0.15;
 
   updateCamera(dt);
   renderer.render(scene, camera);
@@ -498,7 +554,7 @@ function animate() {
 if (shotName) {
   G.state = 'play';
   showScreen('play');
-  stageShot(shotName, G, { enterCar, onBusted, onWasted });
+  stageShot(shotName, G);
   G.frozen = true;
   document.title = 'SOLMAR-STAGED';
 }

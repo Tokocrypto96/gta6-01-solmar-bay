@@ -23,6 +23,9 @@ export class AudioEngine {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AC();
+      // A context created outside a gesture starts suspended in some
+      // browsers and stays silent until resumed: resume it right away.
+      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.5;
       this.master.connect(this.ctx.destination);
@@ -81,6 +84,12 @@ export class AudioEngine {
   shoot() { this.noiseBurst(0.14, 1800, 0.5, 'highpass'); this.tone(160, 0.09, 'square', 0.16, 60); }
   punch() { this.noiseBurst(0.08, 400, 0.4); }
   crash() { this.noiseBurst(0.3, 500, 0.5); }
+  /** Short UI blip for menu buttons. */
+  click() { this.tone(660, 0.06, 'square', 0.1); }
+  /** Rising jingle when a mission starts (missionDone is for finishing one). */
+  missionStart() {
+    [262, 330, 392, 523].forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.2, null, i * 0.08));
+  }
   pickup() { this.tone(880, 0.12, 'sine', 0.22); this.tone(1318, 0.18, 'sine', 0.2, null, 0.09); }
   cash() {
     [523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.14, 'triangle', 0.2, null, i * 0.07));

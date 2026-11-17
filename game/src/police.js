@@ -149,6 +149,18 @@ export class Police {
       car.x += f.x * car.speed * dt;
       car.z += f.z * car.speed * dt;
       this.city.resolveCircle(car.mesh.position, 1.6);
+      // Cruisers don't drive through traffic: shove apart on contact.
+      for (const other of trafficCars) {
+        const dx = car.x - other.x;
+        const dz = car.z - other.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < 12.5 && d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          const push = (3.55 - d) / 2;
+          car.x += (dx / d) * push;
+          car.z += (dz / d) * push;
+        }
+      }
       car.mesh.rotation.y = car.heading - Math.PI / 2;
       car.animateWheels(dt);
       // Ram the player's car: shove + damage.
@@ -196,6 +208,18 @@ export class Police {
       cop.mesh.position.z += Math.cos(cop.heading) * chaseSpeed * dt;
       cop.speed = chaseSpeed;
       this.city.resolveCircle(cop.mesh.position, 0.5);
+      // Cops don't stack on one spot: push apart when they crowd each other.
+      for (const other of this.cops) {
+        if (other === cop || other.down) continue;
+        const dx = cop.x - other.x;
+        const dz = cop.z - other.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < 1.44 && d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          cop.mesh.position.x = other.x + (dx / d) * 1.2;
+          cop.mesh.position.z = other.z + (dz / d) * 1.2;
+        }
+      }
       cop.mesh.rotation.y = cop.heading;
       cop.animate(dt);
       if (dist < 1.8 && !playerCar) {

@@ -16,9 +16,9 @@
   #money .cash { font-size: 30px; color: #7CFC9A; letter-spacing: 1px; }
   #money .sub { font-size: 13px; color: #ffd76a; font-weight: 600; }
   #wanted { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: 30px; letter-spacing: 4px; }
-  #wanted .star { color: #334; opacity: .55; }
-  #wanted .star.lit { color: #ffd21f; opacity: 1; text-shadow: 0 0 12px rgba(255,210,31,.9); }
-  #wanted .star.hot { color: #ff5347; animation: blink .5s steps(2) infinite; }
+  #wanted .star { display: inline-block; width: 26px; height: 26px; margin: 0 2px; background: #334; opacity: .55; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+  #wanted .star.lit { background: #ffd21f; opacity: 1; filter: drop-shadow(0 0 6px rgba(255,210,31,.9)); }
+  #wanted .star.hot { background: #ff5347; animation: blink .5s steps(2) infinite; }
   @keyframes blink { 50% { opacity: .25; } }
   #healthbar { position: absolute; top: 88px; right: 18px; width: 180px; height: 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; overflow: hidden; }
   #healthfill { height: 100%; width: 100%; background: linear-gradient(90deg,#37d67a,#a5f2b0); }
@@ -57,6 +57,7 @@
   .screen .foot { margin-top: 26px; font-size: 12px; color: #8fa3c8; max-width: 520px; line-height: 1.6; }
   .screen .keys { margin-top: 14px; font-size: 13px; color: #cfe0ff; line-height: 1.9; background: rgba(255,255,255,.06); border-radius: 8px; padding: 10px 18px; }
   .screen .keys b { color: #ffd21f; }
+  .screen .saveinfo { margin-top: 16px; font-size: 13px; color: #9fd8ff; }
   #pausedScreen h1 { font-size: 44px; }
   #endScreen h1 { font-size: 52px; }
 </style>
@@ -68,7 +69,7 @@
 
 <div id="hud" class="hidden">
   <div id="objective"><div class="title" id="objTitle">Free roam</div><div id="objText">Explore Solmar Bay. Steal a car, earn cash, stay out of trouble.</div></div>
-  <div id="wanted"><span class="star" data-s="1">&#9733;</span><span class="star" data-s="2">&#9733;</span><span class="star" data-s="3">&#9733;</span><span class="star" data-s="4">&#9733;</span><span class="star" data-s="5">&#9733;</span></div>
+  <div id="wanted"><span class="star" data-s="1"></span><span class="star" data-s="2"></span><span class="star" data-s="3"></span><span class="star" data-s="4"></span><span class="star" data-s="5"></span></div>
   <div id="money"><div class="cash" id="cash">$0</div><div class="sub" id="cashSub"></div></div>
   <div id="healthbar"><div id="healthfill"></div></div>
   <canvas id="minimap" width="208" height="208"></canvas>
@@ -90,6 +91,7 @@
     <button id="btnNew">NEW GAME</button>
     <button id="btnHow">HOW TO PLAY</button>
   </div>
+  <div class="saveinfo" id="saveInfo"></div>
   <div class="keys" id="howKeys" style="display:none">
     <b>W A S D</b> move / drive &nbsp;·&nbsp; <b>Mouse drag</b> look &nbsp;·&nbsp; <b>Shift</b> sprint &nbsp;·&nbsp; <b>Space</b> jump<br>
     <b>E</b> steal / enter car &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>Left click</b> shoot (pistol) &nbsp;·&nbsp; <b>Q</b> honk<br>

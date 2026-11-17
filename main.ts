@@ -29,6 +29,8 @@ function countEntries(dir) {
   let bytes = 0;
   for (const name of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, name.name);
+    // The gate refuses symlinks outright: fail here, not at the scorer.
+    if (name.isSymbolicLink()) throw new Error(`game/ holds a symlink: ${path}`);
     if (name.isDirectory()) {
       const sub = countEntries(path);
       files += sub.files;
@@ -45,6 +47,9 @@ function countEntries(dir) {
 const gameDir = join(here, 'game');
 const shotDir = join(here, 'screenshots');
 if (!existsSync(join(gameDir, 'index.html'))) throw new Error('game/index.html is missing');
+// The gate caps game/index.html at 1 MiB on its own: check it here too.
+const indexSize = statSync(join(gameDir, 'index.html')).size;
+if (indexSize > 1024 * 1024) throw new Error(`game/index.html is ${indexSize} bytes, over the 1 MiB cap`);
 const gameSize = countEntries(gameDir);
 if (gameSize.files > GAME_MAX_FILES) throw new Error(`game/ has ${gameSize.files} entries, over the 993 cap`);
 if (gameSize.bytes > GAME_MAX_BYTES) throw new Error(`game/ is ${gameSize.bytes} bytes, over the 48 MiB cap`);

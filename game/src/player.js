@@ -44,8 +44,9 @@ export class Player {
     this.health = Math.min(this.maxHealth, this.health + amount);
   }
 
-  /** On-foot movement, camera-relative. Returns the planar speed for the HUD. */
-  updateOnFoot(input, dt, city, camYaw) {
+  /** On-foot movement, camera-relative. Returns the planar speed for the HUD.
+   *  `cars` is every car in the world: Jay must not walk through them. */
+  updateOnFoot(input, dt, city, camYaw, cars = []) {
     const run = input.down('ShiftLeft', 'ShiftRight');
     const fwd = (input.down('KeyW', 'ArrowUp') ? 1 : 0) - (input.down('KeyS', 'ArrowDown') ? 1 : 0);
     const strafe = (input.down('KeyD', 'ArrowRight') ? 1 : 0) - (input.down('KeyA', 'ArrowLeft') ? 1 : 0);
@@ -86,6 +87,19 @@ export class Player {
     this.pos.x = Math.max(-CITY_HALF - 24, Math.min(CITY_HALF + 24, this.pos.x));
     this.pos.z = Math.max(-CITY_HALF - 4, Math.min(CITY_HALF + 30, this.pos.z));
     city.resolveCircle(this.pos, 0.55);
+    // Don't walk through cars: push out of a 2.5 m circle around each one.
+    // (Buildings already push via resolveCircle above; cars did not, so Jay
+    // used to clip straight through a parked sedan.)
+    for (const car of cars) {
+      const dx = this.pos.x - car.x;
+      const dz = this.pos.z - car.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < 6.25 && d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        this.pos.x = car.x + (dx / d) * 2.5;
+        this.pos.z = car.z + (dz / d) * 2.5;
+      }
+    }
     this.mesh.position.copy(this.pos);
     this.mesh.rotation.y = this.heading;
     // Walk-cycle swing.

@@ -29,8 +29,12 @@ export class Input {
       this.dragging = true;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
+      // Only the left button shoots: a right-click drag used to queue a shot
+      // that fired on the next left click (stale click consumed a frame late).
       if (e.button === 0) this.clicked = true;
     });
+    // Right-drag orbits the camera too; never pop the browser context menu.
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mouseup', () => {
       this.mouseDown = false;
       this.dragging = false;

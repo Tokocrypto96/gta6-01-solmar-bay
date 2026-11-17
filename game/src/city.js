@@ -4,7 +4,7 @@
 // collision boxes and the road graph the traffic and the missions drive on.
 import * as THREE from 'three';
 import { BEACH_Z, CAR_COLORS, CITY_HALF, OCEAN_Z, PITCH, ROAD_HALF, WALK_HALF } from './config.js';
-import { pick, randInt, randRange } from './rng.js';
+import { chance, pick, randInt, randRange } from './rng.js';
 
 const BLOCK = PITCH - 2 * WALK_HALF; // 36 m of buildable block
 
@@ -222,6 +222,23 @@ export class City {
     scene.add(ocean);
     this.ocean = ocean;
 
+    // Rico's yacht, anchored off the beach — the m6 rendezvous, visible
+    // from the shore so the story's last meeting point reads on the skyline.
+    const yacht = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(14, 2.2, 4.5), new THREE.MeshLambertMaterial({ color: 0xf2f2f2 }));
+    hull.position.y = 0.8;
+    yacht.add(hull);
+    const yachtCabin = new THREE.Mesh(new THREE.BoxGeometry(8, 2.4, 3.6), new THREE.MeshLambertMaterial({ color: 0x2c3e50 }));
+    yachtCabin.position.y = 2.9;
+    yacht.add(yachtCabin);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 9, 6), new THREE.MeshLambertMaterial({ color: 0x8a6b46 }));
+    mast.position.y = 7;
+    yacht.add(mast);
+    yacht.position.set(48, 0, OCEAN_Z + 22);
+    yacht.rotation.y = -0.5;
+    scene.add(yacht);
+    this.yacht = yacht;
+
     // Named places (missions, shops, safehouse). Markers sit just inside the block
     // corner beside their intersection, clear of the road so traffic flows past.
     // Defined BEFORE the buildings so no building is ever raised on a marker.
@@ -297,8 +314,8 @@ export class City {
     const palmSpots = [];
     for (const r of this.roads) {
       for (const s of this.roads) {
-        if (rng() < 0.5) palmSpots.push([r + WALK_HALF - 1.2, s + WALK_HALF - 1.2]);
-        if (rng() < 0.35) palmSpots.push([r - WALK_HALF + 1.2, s - WALK_HALF + 1.2]);
+        if (chance(rng, 0.5)) palmSpots.push([r + WALK_HALF - 1.2, s + WALK_HALF - 1.2]);
+        if (chance(rng, 0.35)) palmSpots.push([r - WALK_HALF + 1.2, s - WALK_HALF + 1.2]);
       }
     }
     for (let x = -CITY_HALF; x <= CITY_HALF; x += 18) palmSpots.push([x, BEACH_Z - 2]);
@@ -311,10 +328,14 @@ export class City {
       scene.add(p);
     }
 
-    // Lamps at intersections.
-    for (const r of this.roads) {
-      for (const s of this.roads) {
-        if ((r + s) % 2 !== 0) continue;
+    // Lamps at every other intersection (checkerboard). The old test used
+    // (r + s) % 2 on road coordinates that are all multiples of 58, so it
+    // was always 0 and a lamp landed on ALL 49 intersections.
+    for (let ri = 0; ri < this.roads.length; ri += 1) {
+      for (let si = 0; si < this.roads.length; si += 1) {
+        if ((ri + si) % 2 !== 0) continue;
+        const r = this.roads[ri];
+        const s = this.roads[si];
         const lamp = makeLamp();
         lamp.position.set(r + ROAD_HALF + 1.4, 0, s + ROAD_HALF + 1.4);
         lamp.rotation.y = Math.PI;

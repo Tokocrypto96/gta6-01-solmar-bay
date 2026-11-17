@@ -30,6 +30,15 @@ export const REPAIR_PRICE = 150;
 export const SHELL_COUNT = 20;
 /** Shell pickup reward. */
 export const SHELL_REWARD = 75;
+/** Hospital treatment price (was a magic 100 in the shop code). */
+export const HEAL_PRICE = 100;
+/** Taxi fare payout range. */
+export const FARE_PAY_MIN = 60;
+export const FARE_PAY_MAX = 99;
+/** Autosave interval while playing, in seconds. */
+export const AUTOSAVE_SECONDS = 15;
+/** Highest wanted level. */
+export const MAX_STARS = 5;
 
 /** Colour palette for traffic cars (sun-soaked, slightly desaturated). */
 export const CAR_COLORS = [

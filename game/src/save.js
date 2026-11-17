@@ -18,6 +18,9 @@ export function saveGame(G) {
       health: G.player.health,
       pistol: G.player.pistol,
       missionIndex: G.missions.index,
+      missionStep: G.missions.stepIndex,
+      missionActive: G.missions.active,
+      missionTimer: G.missions.timer,
       missionDone: G.missions.done,
       shells: G.shells.collected,
       totalEarned: G.totalEarned,
@@ -40,6 +43,10 @@ export function loadSave() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || data.version !== 1) return null;
+    // A save with a broken player position (NaN, missing) would strand Jay
+    // off the map: reject it instead of loading a corrupted game.
+    if (!data.player || !Number.isFinite(data.player.x) || !Number.isFinite(data.player.z)) return null;
+    if (!Number.isFinite(data.cash) || !Number.isFinite(data.health)) return null;
     return data;
   } catch {
     return null;

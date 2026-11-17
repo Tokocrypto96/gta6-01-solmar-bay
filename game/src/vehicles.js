@@ -237,9 +237,9 @@ export class Traffic {
     car.leg = leg;
     car.cruise = randRange(this.rng, 8, 13);
     car.waitTimer = 0;
+    car.turnCooldown = 0; // seconds before it may decide to turn again
     this.scene.add(mesh);
     this.cars.push(car);
-    if (!initial) car.mesh.position.y = 0;
     return car;
   }
 
@@ -265,9 +265,15 @@ export class Traffic {
   update(dt, playerCar, peds) {
     for (const car of this.cars) {
       const leg = car.leg;
-      // Lane target: right-hand lane of the current road.
+      car.turnCooldown = Math.max(0, (car.turnCooldown ?? 0) - dt);
+      // Lane target: right-hand lane of the current road. For x-legs the
+      // lane offset runs along z (+3.5 eastbound, -3.5 westbound); for
+      // z-legs it runs along x and flips sign (northbound cars sit at
+      // road - 3.5). The old one-liner spelled the z case as a nested
+      // ternary that always evaluated to -lane — same result, unreadable.
       const lane = leg.dir > 0 ? 3.5 : -3.5;
-      const lateral = leg.axis === 'x' ? car.z - (leg.road + lane) : car.x - (leg.road + (leg.axis === 'z' ? (leg.dir > 0 ? -lane : -lane) : lane));
+      const laneLine = leg.axis === 'x' ? leg.road + lane : leg.road - lane;
+      const lateral = leg.axis === 'x' ? car.z - laneLine : car.x - laneLine;
       // Desired heading: along the road, corrected toward the lane line.
       // The correction's sign depends on the leg: steering toward the lane
       // needs +lateral on eastbound x-legs and northbound z-legs, -lateral
@@ -295,24 +301,35 @@ export class Traffic {
       car.z += f.z * car.speed * dt;
       car.mesh.rotation.y = car.heading - Math.PI / 2;
       car.animateWheels(dt);
-      // Reached an intersection: maybe turn onto the cross road.
+      // Reached an intersection: maybe turn onto the cross road. The old
+      // code rolled rng() < 0.5 EVERY frame spent near the intersection, so
+      // a car almost always turned at the first crossroads it met and
+      // traffic zig-zagged block to block. Now it decides once, then a
+      // cooldown keeps it driving straight until it clears the junction.
       const cross = leg.axis === 'x' ? car.z : car.x;
       const crossRoad = this.city.nearestRoad(cross);
       const alongNow = leg.axis === 'x' ? car.x : car.z;
-      if (Math.abs(alongNow - this.city.nearestRoad(alongNow)) < 2.5 && this.rng() < 0.5) {
+      if (Math.abs(alongNow - this.city.nearestRoad(alongNow)) < 2.5 && car.turnCooldown <= 0 && this.rng() < 0.5) {
         const turn = this.rng();
         if (turn < 0.3) {
           // Turn onto the cross road.
           const newDir = this.rng() < 0.5 ? 1 : -1;
           car.leg = { axis: leg.axis === 'x' ? 'z' : 'x', dir: newDir, road: this.city.nearestRoad(alongNow), along: crossRoad };
+          car.turnCooldown = 3.5;
+        } else {
+          car.turnCooldown = 1.5; // decided to go straight: don't re-roll here
         }
       }
-      // Wrap back into the city if it drove off the edge.
+      // Wrap back into the city if it drove off the edge. The respawn puts
+      // the car on the right-hand lane of its new leg, exactly like a fresh
+      // spawn (the old code always used +3.5, so z-leg cars respawned on
+      // the wrong side of the road).
       if (Math.abs(car.x) > CITY_HALF + 6 || Math.abs(car.z) > CITY_HALF + 6) {
         const leg2 = this.randomLeg();
         car.leg = leg2;
-        car.x = leg2.axis === 'x' ? leg2.along : leg2.road + 3.5;
-        car.z = leg2.axis === 'z' ? leg2.along : leg2.road + 3.5;
+        car.turnCooldown = 0;
+        car.x = leg2.axis === 'x' ? leg2.along : leg2.road + (leg2.dir > 0 ? -3.5 : 3.5);
+        car.z = leg2.axis === 'z' ? leg2.along : leg2.road + (leg2.dir > 0 ? 3.5 : -3.5);
         car.heading = leg2.axis === 'x' ? (leg2.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (leg2.dir > 0 ? 0 : Math.PI);
         car.speed = car.cruise;
       }

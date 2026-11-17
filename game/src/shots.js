@@ -164,11 +164,23 @@ export function stageShot(name, G) {
       ped.heading = Math.PI / 2 + (i % 2 ? 0.4 : -0.4);
       ped.mesh.rotation.y = ped.heading;
     }
+    // Two jaywalkers crossing the coast road in front of the camera, so the
+    // street shot shows pedestrians in the road as well as on the sidewalk.
+    for (let i = 0; i < 2 && 4 + i < G.peds.peds.length; i += 1) {
+      const ped = G.peds.peds[4 + i];
+      ped.mesh.position.set(-6 + i * 12, 0, 170 + (i % 2) * 4);
+      ped.heading = i % 2 ? -Math.PI / 2 : Math.PI / 2;
+      ped.mesh.rotation.y = ped.heading;
+    }
     lineUpTraffic(G, 174, 6, 3, Math.PI / 2);
     G.missions.index = 0;
     G.missions.active = false;
+    // Closer, steeper camera than the default on-foot framing: at camDist 10
+    // / pitch 0.3 Jay was cut off at the bottom edge of the frame and only
+    // the top of his head showed.
+    G.camDist = 8.5;
+    G.camPitch = 0.42;
     G.camYaw = Math.PI - 0.25;
-    G.camPitch = 0.3;
     snapCamera(G, 6, 1.7, BEACH_Z - 8);
   }
 

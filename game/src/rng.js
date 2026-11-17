@@ -26,3 +26,18 @@ export function pick(rng, arr) {
 export function randRange(rng, min, max) {
   return min + rng() * (max - min);
 }
+
+/** True with probability p (0..1) from a seeded rng. */
+export function chance(rng, p) {
+  return rng() < p;
+}
+
+/** Shuffle a copy of an array in place order, from a seeded rng. */
+export function shuffle(rng, arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
