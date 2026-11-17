@@ -1,0 +1,223 @@
+// Solmar Bay — the wanted system: crimes add heat, heat becomes stars, stars bring
+// police cars and foot cops. Lose them by staying out of sight; get busted when a cop
+// catches you slow, wasted when your health hits zero.
+import * as THREE from 'three';
+import { CITY_HALF } from './config.js';
+import { Car, makeCarMesh } from './vehicles.js';
+import { makePedMesh, Ped } from './pedestrians.js';
+
+/** Heat needed for each star level (heat decays when no crime is committed). */
+const STAR_HEAT = [0, 25, 60, 110, 170, 240];
+/** How many police cars hunt the player at each star level. */
+const POLICE_CARS = [0, 1, 2, 3, 4, 5];
+/** How many foot cops hunt the player at each star level. */
+const FOOT_COPS = [0, 1, 1, 2, 3, 4];
+
+export class Police {
+  constructor(scene, city, rng) {
+    this.scene = scene;
+    this.city = city;
+    this.rng = rng;
+    this.heat = 0;
+    this.stars = 0;
+    this.cars = [];
+    this.cops = [];
+    this.bustedTimer = 0;
+    this.decayTimer = 0;
+    this.flashTimer = 0;
+    this.shootTimer = 0;
+  }
+
+  /** A crime was committed: add heat and update the star level. */
+  addHeat(amount) {
+    this.heat = Math.min(260, this.heat + amount);
+    this.updateStars();
+  }
+
+  updateStars() {
+    let stars = 0;
+    for (let s = 1; s <= 5; s += 1) if (this.heat >= STAR_HEAT[s]) stars = s;
+    if (stars !== this.stars) {
+      this.stars = stars;
+      this.syncForces();
+    }
+  }
+
+  /** Match the number of police cars/cops on the street to the star level. */
+  syncForces() {
+    while (this.cars.length < POLICE_CARS[this.stars]) this.spawnPoliceCar();
+    while (this.cars.length > POLICE_CARS[this.stars]) {
+      const car = this.cars.pop();
+      this.scene.remove(car.mesh);
+    }
+    while (this.cops.length < FOOT_COPS[this.stars]) this.spawnCop();
+    while (this.cops.length > FOOT_COPS[this.stars]) {
+      const cop = this.cops.pop();
+      this.scene.remove(cop.mesh);
+    }
+  }
+
+  spawnPoliceCar() {
+    const mesh = makeCarMesh(0x14181f, { police: true });
+    const car = new Car(mesh, {
+      x: 0, z: 0, maxSpeed: 24 + this.stars, police: true, ai: 'police',
+    });
+    car.mesh.position.y = 0;
+    this.scene.add(mesh);
+    this.cars.push(car);
+    return car;
+  }
+
+  spawnCop() {
+    const mesh = makePedMesh(0x1c2f4a);
+    // Police cap + badge: dark cap, white shirt stripe.
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.26, 0.12, 8),
+      new THREE.MeshLambertMaterial({ color: 0x101418 }),
+    );
+    cap.position.y = 1.95;
+    mesh.add(cap);
+    const cop = new Ped(mesh, 0, 0);
+    cop.isCop = true;
+    cop.speed = 3.4;
+    this.scene.add(mesh);
+    this.cops.push(cop);
+    return cop;
+  }
+
+  /** Put a fresh police car / cop at a road edge away from the player. */
+  placeForceNear(playerX, playerZ, minDist = 55) {
+    for (const car of this.cars) {
+      const dx = car.x - playerX;
+      const dz = car.z - playerZ;
+      if (dx * dx + dz * dz < minDist * minDist || Math.abs(car.x) > CITY_HALF || Math.abs(car.z) > CITY_HALF) {
+        const road = this.city.roads[Math.floor(this.rng() * this.city.roads.length)];
+        const along = playerX + (this.rng() < 0.5 ? -1 : 1) * (60 + this.rng() * 40);
+        if (this.rng() < 0.5) { car.x = along; car.z = road; } else { car.x = road; car.z = along; }
+        car.speed = 8;
+      }
+    }
+    for (const cop of this.cops) {
+      const dx = cop.x - playerX;
+      const dz = cop.z - playerZ;
+      if (dx * dx + dz * dz < 30 * 30) {
+        cop.mesh.position.x = playerX + (this.rng() < 0.5 ? -1 : 1) * (28 + this.rng() * 12);
+        cop.mesh.position.z = playerZ + (this.rng() < 0.5 ? -1 : 1) * (28 + this.rng() * 12);
+      }
+    }
+  }
+
+  /** Flash the light bars; returns true while any police car is close to the player. */
+  update(dt, player, playerCar, trafficCars, audio, onBusted, onWasted) {
+    this.flashTimer += dt;
+    const flashOn = Math.floor(this.flashTimer * 4) % 2 === 0;
+    let sirenNear = false;
+    // Heat decays when the player commits no crime; faster when no police is near.
+    this.decayTimer += dt;
+    if (this.decayTimer > 1) {
+      this.decayTimer = 0;
+      let nearest = Infinity;
+      for (const car of this.cars) {
+        const d = Math.hypot(car.x - player.x, car.z - player.z);
+        if (d < nearest) nearest = d;
+      }
+      if (nearest > 60) this.heat = Math.max(0, this.heat - 4);
+      else this.heat = Math.max(0, this.heat - 1);
+      this.updateStars();
+    }
+
+    // Police cars chase: steer toward the player, ram to slow them down.
+    const px = playerCar ? playerCar.x : player.x;
+    const pz = playerCar ? playerCar.z : player.z;
+    for (const car of this.cars) {
+      const m = car.mesh.userData;
+      if (m.lightRed) m.lightRed.material.emissiveIntensity = flashOn ? 2.2 : 0.15;
+      if (m.lightBlue) m.lightBlue.material.emissiveIntensity = flashOn ? 0.15 : 2.2;
+      const dx = px - car.x;
+      const dz = pz - car.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 120) sirenNear = true;
+      const targetHeading = Math.atan2(dx, dz);
+      let err = targetHeading - car.heading;
+      while (err > Math.PI) err -= Math.PI * 2;
+      while (err < -Math.PI) err += Math.PI * 2;
+      const steerAuthority = Math.min(1, dist / 30);
+      car.heading += Math.max(-2.4 * dt, Math.min(2.4 * dt, err * 3 * dt)) * steerAuthority;
+      const wantSpeed = dist > 6 ? car.maxSpeed : 6;
+      car.speed += (wantSpeed - car.speed) * Math.min(1, dt * 1.2);
+      const f = car.forward();
+      car.x += f.x * car.speed * dt;
+      car.z += f.z * car.speed * dt;
+      this.city.resolveCircle(car.mesh.position, 1.6);
+      car.mesh.rotation.y = car.heading - Math.PI / 2;
+      car.animateWheels(dt);
+      // Ram the player's car: shove + damage.
+      if (playerCar && dist < 4.2) {
+        playerCar.x += (dx / Math.max(1, dist)) * -0.6;
+        playerCar.z += (dz / Math.max(1, dist)) * -0.6;
+        playerCar.speed *= 0.92;
+        if (player.damage(6)) onWasted();
+      }
+      // Busted: caught slow on foot or in a stopped car with a cruiser on the bumper.
+      const playerSlow = playerCar ? Math.abs(playerCar.speed) < 2 : player.speed < 1;
+      if (dist < (playerCar ? 5 : 3.2) && playerSlow) {
+        this.bustedTimer += dt;
+        if (this.bustedTimer > 1.6) {
+          this.bustedTimer = 0;
+          onBusted();
+          return;
+        }
+      } else {
+        this.bustedTimer = Math.max(0, this.bustedTimer - dt * 2);
+      }
+    }
+
+    // Foot cops chase on foot and punch; at 3+ stars they shoot from range.
+    for (const cop of this.cops) {
+      if (cop.down) {
+        cop.downTimer -= dt;
+        if (cop.downTimer <= 0) {
+          cop.down = false;
+          cop.mesh.rotation.z = 0;
+          cop.mesh.position.y = 0;
+        }
+        continue;
+      }
+      const dx = player.x - cop.x;
+      const dz = player.z - cop.z;
+      const dist = Math.hypot(dx, dz);
+      const targetHeading = Math.atan2(dx, dz);
+      let err = targetHeading - cop.heading;
+      while (err > Math.PI) err -= Math.PI * 2;
+      while (err < -Math.PI) err += Math.PI * 2;
+      cop.heading += Math.max(-4 * dt, Math.min(4 * dt, err * 6 * dt));
+      const chaseSpeed = playerCar ? 5.2 : 4.4;
+      cop.mesh.position.x += Math.sin(cop.heading) * chaseSpeed * dt;
+      cop.mesh.position.z += Math.cos(cop.heading) * chaseSpeed * dt;
+      cop.speed = chaseSpeed;
+      this.city.resolveCircle(cop.mesh.position, 0.5);
+      cop.mesh.rotation.y = cop.heading;
+      cop.animate(dt);
+      if (dist < 1.8 && !playerCar) {
+        if (player.damage(8)) onWasted();
+      }
+      if (this.stars >= 3 && dist < 26 && dist > 6 && !playerCar) {
+        this.shootTimer -= dt;
+        if (this.shootTimer <= 0) {
+          this.shootTimer = 0.9;
+          audio?.shoot();
+          if (player.damage(5)) onWasted();
+        }
+      }
+    }
+    audio?.setSiren(sirenNear && this.stars > 0);
+  }
+
+  /** Clear the heat (busted, mission restart, bribe). */
+  clear() {
+    this.heat = 0;
+    this.stars = 0;
+    this.bustedTimer = 0;
+    this.syncForces();
+  }
+}
