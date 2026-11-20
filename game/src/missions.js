@@ -1,12 +1,17 @@
-// Solmar Bay — the story: six jobs for Rico Vasquez that take Jay from dock rat to
-// king of the Bay, plus taxi fares and twenty golden shells hidden around the city.
-// Each mission is a list of steps (drive somewhere, hold a spot, survive the heat);
-// the HUD shows the current step, the beacon and the minimap show where to go.
+// Solmar Bay — the story (v2).
+//
+// Six jobs for Rico Vasquez carry Jay from dock rat to king of the Bay:
+// steal a car, rush pizzas, run a taxi, drive a getaway, hold a bank,
+// survive the manhunt. Around the story sit the free-roam loops — taxi
+// fares and twenty golden shells. The mission definitions, step logic,
+// shops and shells below are the original design; v2 adds one helper,
+// stepStates(), so the HUD's mission tracker can draw the whole job —
+// steps done, step current, steps to come — instead of one line of text.
 import * as THREE from 'three';
 import { BRIBE_PER_STAR, FARE_PAY_MAX, FARE_PAY_MIN, HEAL_PRICE, PISTOL_PRICE, REPAIR_PRICE, SHELL_COUNT, SHELL_REWARD } from './config.js';
 import { pick, randRange } from './rng.js';
 
-/** The six story missions, in order. */
+/** The six story missions, in the order Rico hands them out. */
 export const MISSION_DEFS = [
   {
     id: 'm1-first-wheels',
@@ -86,18 +91,18 @@ export class Missions {
     this.index = 0; // next mission to play
     this.stepIndex = 0;
     this.active = false;
-    this.timer = 0; // mission countdown (m2) or survive countdown (m6)
+    this.timer = 0; // mission countdown (m2) / survive countdown (m6)
     this.holdTimer = 0;
     this.faresDone = 0;
     this.fareCustomer = null;
     this.fareTarget = null;
-    this.done = false; // whole story finished
+    this.done = false; // the whole story is finished
   }
 
   get def() { return MISSION_DEFS[this.index] ?? null; }
   get step() { return this.def?.steps[this.stepIndex] ?? null; }
 
-  /** Start the next mission (or resume it after a fail). */
+  /** Start the next mission (or restart it after a fail). */
   start() {
     const def = this.def;
     if (!def) return;
@@ -113,27 +118,27 @@ export class Missions {
     this.beginStep();
   }
 
-  /** Per-step setup: spawn a fare customer, set wanted, etc. */
+  /** Per-step setup: a fare customer to spawn, heat to raise, a timer to arm. */
   beginStep() {
     const step = this.step;
     if (!step) return;
     if (step.type === 'fare') this.spawnFareCustomer();
     if (step.type === 'survive') {
       this.timer = step.seconds;
-      this.ctx.police.addHeat(200); // jump straight to 4 stars
+      this.ctx.police.addHeat(200); // straight to four stars
       this.ctx.police.placeForceNear(this.ctx.player.x, this.ctx.player.z);
     }
     if (this.def.id === 'm4-getaway' && step.type === 'loseHeat') {
-      this.ctx.police.addHeat(60); // 2 stars when the crew gets in
+      this.ctx.police.addHeat(60); // two stars the moment the crew climbs in
       this.ctx.police.placeForceNear(this.ctx.player.x, this.ctx.player.z);
     }
     if (this.def.id === 'm5-bank-job' && step.type === 'hold') {
-      this.ctx.police.addHeat(130); // 3 stars the moment the safe opens
+      this.ctx.police.addHeat(130); // three stars as the safe cracks open
       this.ctx.police.placeForceNear(this.ctx.player.x, this.ctx.player.z);
     }
   }
 
-  /** Current objective for the HUD; target is the marker position or null. */
+  /** The current objective for the HUD: title, text, target (or null). */
   objective() {
     if (this.done) return { title: 'King of Solmar Bay', text: 'Story complete. Free roam: fares, shells, and the city is yours.', target: null };
     if (!this.active) {
@@ -161,9 +166,22 @@ export class Missions {
     }
   }
 
+  /**
+   * Every step of the current job with its state — 'done', 'current' or
+   * 'todo' — for the HUD's mission tracker. Empty when no job is on offer.
+   */
+  stepStates() {
+    const def = this.def;
+    if (!def || this.done) return [];
+    return def.steps.map((s, i) => ({
+      text: s.text,
+      state: !this.active ? 'todo' : i < this.stepIndex ? 'done' : i === this.stepIndex ? 'current' : 'todo',
+    }));
+  }
+
+  /** A fare customer, waiting at a kerb on the nearest road to the player. */
   spawnFareCustomer() {
     const { player, peds, city } = this.ctx;
-    // A kerb near the player: beside the nearest road.
     const road = city.nearestRoad(player.x);
     const along = player.z + (Math.random() < 0.5 ? -40 : 40);
     const x = road + 9;
@@ -171,7 +189,7 @@ export class Missions {
     this.fareCustomer = peds.spawnCustomer(x, z);
   }
 
-  /** Pick a random drop-off place for a fare. */
+  /** A random named place as a fare's drop-off. */
   randomFareTarget() {
     const names = ['hospital', 'beach', 'bank', 'pizzaria', 'safehouse', 'gunShop', 'paintShop'];
     const name = pick(Math.random, names);
@@ -179,6 +197,7 @@ export class Missions {
     return { x: p.x, z: p.z, name };
   }
 
+  /** Step complete: move on, or close the job out. */
   advance() {
     this.stepIndex += 1;
     if (this.stepIndex >= this.def.steps.length) {
@@ -216,13 +235,14 @@ export class Missions {
     this.fareTarget = null;
   }
 
-  /** Per-frame mission logic. `G` carries the shared world state. */
+  /** Per-frame mission logic. `G` is the shared world state from main.js. */
   update(dt, G) {
+    void G;
     if (!this.active) return;
     const { player } = this.ctx;
     const step = this.step;
     if (!step) return;
-    // Mission countdown (pizza rush).
+    // The pizza clock runs across the whole of m2, whatever the step.
     if (this.def.timer && step.type !== 'survive') {
       this.timer -= dt;
       if (this.timer <= 0) {
@@ -269,7 +289,6 @@ export class Missions {
       }
       case 'fare': {
         if (this.fareCustomer) {
-          // Player must stop near the customer (on foot or in a car).
           if (distTo(this.fareCustomer) < 4) {
             this.ctx.peds.removePed(this.fareCustomer);
             this.fareCustomer = null;
@@ -293,11 +312,10 @@ export class Missions {
       default:
         break;
     }
-    void G;
   }
 }
 
-/** Shops: what the E key does near each named place. Returns prompt text or null. */
+/** What the E key would do at the place the player is standing in, if any. */
 export function shopPrompt(G) {
   const { player, city, police } = G;
   const px = player.inCar ? player.inCar.x : player.x;
@@ -321,7 +339,7 @@ export function shopPrompt(G) {
   return null;
 }
 
-/** Run the shop the player is standing at. Returns true when something happened. */
+/** Run the shop under the player's feet. True when the E key was consumed. */
 export function useShop(G) {
   const { player, city, police, audio } = G;
   const px = player.inCar ? player.inCar.x : player.x;
@@ -368,7 +386,7 @@ export function useShop(G) {
   return false;
 }
 
-/** Golden shells: 20 pickups hidden on sidewalks, the beach and plazas. */
+/** Golden shells: twenty pickups tucked along sidewalks and the sand. */
 export class Shells {
   constructor(scene, city, rng) {
     this.scene = scene;
@@ -413,7 +431,7 @@ export class Shells {
     }
   }
 
-  /** Mark shells as already collected (save load). */
+  /** Mark the first `count` shells as already pocketed (save load). */
   setCollected(count) {
     for (let i = 0; i < Math.min(count, this.items.length); i += 1) {
       this.items[i].taken = true;

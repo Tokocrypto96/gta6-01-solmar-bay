@@ -1,14 +1,25 @@
-// Solmar Bay — the player on foot: Jay Marlin, a third-person walker with a run,
-// a jump, a punch, and a pistol (once bought). Also the enter/exit-car logic and
-// the camera-relative movement the on-foot controls share with the driving camera.
+// Solmar Bay — the player on foot (v2).
+//
+// Jay Marlin: a third-person walker with a camera-relative stride, a
+// sprint, a jump, a right hook and — once Ironworks has his $400 — a
+// pistol. v2 dresses him properly for the bay: green dock jacket, red
+// cap, shades. The movement, collision and combat code below is the
+// original feel, unchanged.
 import * as THREE from 'three';
 import { CITY_HALF } from './config.js';
 import { makePedMesh } from './pedestrians.js';
 
-/** The player's character: mesh + movement + combat state. */
+/** The player's character: mesh, movement state and combat state. */
 export class Player {
   constructor(scene) {
-    this.mesh = makePedMesh(0x1f6f4a); // Jay's green dock jacket
+    this.mesh = makePedMesh(0x1f6f4a, 0xc98d64, { hat: 'cap', hatColor: 0xc0392b, pants: 0x273746 });
+    // Shades: a dark band across the face — Jay is incognito, allegedly.
+    const shades = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.09, 0.1),
+      new THREE.MeshLambertMaterial({ color: 0x101418 }),
+    );
+    shades.position.set(0, 1.76, 0.23);
+    this.mesh.add(shades);
     this.mesh.scale.setScalar(1.04);
     scene.add(this.mesh);
     this.pos = new THREE.Vector3(-160, 0, 160);
@@ -24,14 +35,14 @@ export class Player {
     this.punchTimer = 0;
     this.punchCooldown = 0;
     this.hurtTimer = 0;
-    this.inCar = null; // the Car the player is driving, or null
+    this.inCar = null; // the Car being driven, or null on foot
     this.mesh.position.copy(this.pos);
   }
 
   get x() { return this.pos.x; }
   get z() { return this.pos.z; }
 
-  /** Hurt the player; returns true when this kills them. */
+  /** Take a hit; returns true when it puts Jay down for good. */
   damage(amount) {
     if (this.hurtTimer > 0) return false;
     this.health -= amount;
@@ -39,13 +50,16 @@ export class Player {
     return this.health <= 0;
   }
 
-  /** Heal up to the max. */
+  /** Patch Jay up, never past full health. */
   heal(amount) {
     this.health = Math.min(this.maxHealth, this.health + amount);
   }
 
-  /** On-foot movement, camera-relative. Returns the planar speed for the HUD.
-   *  `cars` is every car in the world: Jay must not walk through them. */
+  /**
+   * On-foot movement, camera-relative. `cars` is every car in the world:
+   * Jay collides with them as well as with buildings. Returns the planar
+   * speed (the police read it to decide whether he's catchable).
+   */
   updateOnFoot(input, dt, city, camYaw, cars = []) {
     const run = input.down('ShiftLeft', 'ShiftRight');
     const fwd = (input.down('KeyW', 'ArrowUp') ? 1 : 0) - (input.down('KeyS', 'ArrowDown') ? 1 : 0);
@@ -54,7 +68,7 @@ export class Player {
     const targetSpeed = moving ? (run ? 7.2 : 4.2) : 0;
     this.speed += (targetSpeed - this.speed) * Math.min(1, dt * 10);
     if (moving) {
-      // Camera-relative: forward is where the camera looks on the ground plane.
+      // Forward is where the camera looks, projected onto the ground.
       const sin = Math.sin(camYaw);
       const cos = Math.cos(camYaw);
       let mx = sin * fwd - cos * strafe;
@@ -70,7 +84,7 @@ export class Player {
       while (err < -Math.PI) err += Math.PI * 2;
       this.heading += Math.max(-10 * dt, Math.min(10 * dt, err * 12 * dt));
     }
-    // Jump + gravity.
+    // Jump and gravity.
     if (input.wasPressed('Space') && this.grounded) {
       this.vy = 6.5;
       this.grounded = false;
@@ -87,9 +101,8 @@ export class Player {
     this.pos.x = Math.max(-CITY_HALF - 24, Math.min(CITY_HALF + 24, this.pos.x));
     this.pos.z = Math.max(-CITY_HALF - 4, Math.min(CITY_HALF + 30, this.pos.z));
     city.resolveCircle(this.pos, 0.55);
-    // Don't walk through cars: push out of a 2.5 m circle around each one.
-    // (Buildings already push via resolveCircle above; cars did not, so Jay
-    // used to clip straight through a parked sedan.)
+    // Cars are solid too: push out of a 2.5 m circle around each one
+    // (without this Jay clipped straight through parked sedans).
     for (const car of cars) {
       const dx = this.pos.x - car.x;
       const dz = this.pos.z - car.z;
@@ -102,7 +115,7 @@ export class Player {
     }
     this.mesh.position.copy(this.pos);
     this.mesh.rotation.y = this.heading;
-    // Walk-cycle swing.
+    // Walk cycle, with the right arm cocked while a punch is out.
     this.walkPhase += dt * this.speed * 2.4;
     const swing = Math.sin(this.walkPhase) * 0.5 * Math.min(1, this.speed / 4);
     const u = this.mesh.userData;
@@ -121,7 +134,7 @@ export class Player {
     return this.speed;
   }
 
-  /** Punch: hits the nearest ped/cop in front within 2.2 m. Returns the victim or null. */
+  /** Punch the nearest ped or cop in front within 2.2 m. Returns the victim. */
   tryPunch(peds, cops) {
     if (this.punchCooldown > 0 || this.inCar) return null;
     this.punchTimer = 0.28;
@@ -148,8 +161,9 @@ export class Player {
     return best;
   }
 
-  /** Shoot a hitscan ray from the camera through the crosshair. Returns a hit record. */
+  /** Hitscan from the camera through the crosshair. Returns a hit record. */
   tryShoot(camera, peds, cops, cars, scene) {
+    void scene;
     if (!this.pistol || this.inCar) return null;
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(0, 0), camera);

@@ -1,12 +1,13 @@
-// Solmar Bay — entry program for make.fun gta6-01 (Node 22, standard library only).
+// Solmar Bay — entry program for make.fun gta6-01 (Node 22, stdlib only).
 //
-// The game lives in game/ as plain static files: game/index.html plus its ES modules,
-// three.js vendored as game/vendor/three.module.min.js, no network request anywhere.
-// This program hands the entry in: it copies game/ and screenshots/ from beside this
-// file into /output (or MAKEFUN_OUTPUT_DIR outside the grader) and writes
-// /output/dossier.json with the kit's buildDossier library, so the judge reads the
-// game exactly as it was built. It does nothing else: no install, no network, no
-// generated files, so both grader runs write identical bytes.
+// The game itself is a folder of static files: game/index.html, its ES
+// modules under game/src/, and three.js vendored at game/vendor/. This
+// program is the hand-in. It verifies the folder against the gate's caps
+// (and against a small manifest of files the game cannot boot without),
+// copies game/ and screenshots/ into the output directory, and writes
+// dossier.json with the kit's buildDossier library so the judge reads
+// exactly the bytes that were built. No install step, no network, no
+// generated content: two runs hand in identical bytes.
 
 import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,51 +17,90 @@ import { buildDossier } from './vendor/makefun-game.ts';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-// Gate caps from the kit's reference/gate.json, enforced here so a bad entry is
-// refused locally instead of at the scorer: game/ at most 993 entries and 48 MiB,
-// screenshots at most 4 files of 256 KiB each, dossier text at most 160 KiB.
+// The gate's caps, checked here so a bad hand-in fails on this machine
+// instead of at the scorer: game/ at most 993 entries and 48 MiB in
+// total, game/index.html at most 1 MiB on its own, screenshots/ holding
+// 3-4 images of at most 256 KiB each, dossier text at most 160 KiB.
 const GAME_MAX_FILES = 993;
 const GAME_MAX_BYTES = 48 * 1024 * 1024;
+const INDEX_MAX_BYTES = 1024 * 1024;
+const SHOT_MIN = 3;
 const SHOT_MAX = 4;
 const SHOT_MAX_BYTES = 256 * 1024;
+const DOSSIER_TEXT_MAX = 163840;
 
-function countEntries(dir) {
-  let files = 0;
+// Files the game cannot start without. The caps above would happily pass
+// a folder that is merely small; this manifest is what makes it Solmar Bay.
+const REQUIRED_GAME_FILES = [
+  'index.html',
+  'src/main.js',
+  'src/city.js',
+  'src/hud.js',
+  'src/missions.js',
+  'src/vehicles.js',
+  'src/pedestrians.js',
+  'src/player.js',
+  'src/police.js',
+  'vendor/three.module.min.js',
+];
+
+/** Count entries (files + directories) and bytes under a directory tree. */
+function measureTree(dir) {
+  let entries = 0;
   let bytes = 0;
   for (const name of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, name.name);
-    // The gate refuses symlinks outright: fail here, not at the scorer.
+    // The gate refuses symlinks outright — fail here, not at the scorer.
     if (name.isSymbolicLink()) throw new Error(`game/ holds a symlink: ${path}`);
+    entries += 1; // every entry counts toward the gate's total
     if (name.isDirectory()) {
-      const sub = countEntries(path);
-      files += sub.files;
+      const sub = measureTree(path);
+      entries += sub.entries;
       bytes += sub.bytes;
     } else if (name.isFile()) {
-      files += 1;
+      entries += 1;
       bytes += statSync(path).size;
     }
-    files += 1; // the directory entry itself counts toward the gate's total
   }
-  return { files, bytes };
+  return { entries, bytes };
 }
+
+/* ---------------- Verify ---------------- */
 
 const gameDir = join(here, 'game');
 const shotDir = join(here, 'screenshots');
-if (!existsSync(join(gameDir, 'index.html'))) throw new Error('game/index.html is missing');
-// The gate caps game/index.html at 1 MiB on its own: check it here too.
+
+for (const rel of REQUIRED_GAME_FILES) {
+  if (!existsSync(join(gameDir, rel))) throw new Error(`game/${rel} is missing — the game cannot boot without it`);
+}
 const indexSize = statSync(join(gameDir, 'index.html')).size;
-if (indexSize > 1024 * 1024) throw new Error(`game/index.html is ${indexSize} bytes, over the 1 MiB cap`);
-const gameSize = countEntries(gameDir);
-if (gameSize.files > GAME_MAX_FILES) throw new Error(`game/ has ${gameSize.files} entries, over the 993 cap`);
-if (gameSize.bytes > GAME_MAX_BYTES) throw new Error(`game/ is ${gameSize.bytes} bytes, over the 48 MiB cap`);
+if (indexSize > INDEX_MAX_BYTES) {
+  throw new Error(`game/index.html is ${indexSize} bytes, over the 1 MiB cap`);
+}
+const gameSize = measureTree(gameDir);
+if (gameSize.entries > GAME_MAX_FILES) {
+  throw new Error(`game/ has ${gameSize.entries} entries, over the ${GAME_MAX_FILES} cap`);
+}
+if (gameSize.bytes > GAME_MAX_BYTES) {
+  throw new Error(`game/ is ${gameSize.bytes} bytes, over the 48 MiB cap`);
+}
+
+let shotCount = 0;
 if (existsSync(shotDir)) {
   const shots = readdirSync(shotDir).filter((n) => !n.startsWith('.'));
-  if (shots.length < 3 || shots.length > SHOT_MAX) throw new Error(`screenshots/ holds ${shots.length} images, need 3 or 4`);
+  shotCount = shots.length;
+  if (shots.length < SHOT_MIN || shots.length > SHOT_MAX) {
+    throw new Error(`screenshots/ holds ${shots.length} images, need ${SHOT_MIN} or ${SHOT_MAX}`);
+  }
   for (const shot of shots) {
     const size = statSync(join(shotDir, shot)).size;
-    if (size > SHOT_MAX_BYTES) throw new Error(`screenshots/${shot} is ${size} bytes, over the 256 KiB cap`);
+    if (size > SHOT_MAX_BYTES) {
+      throw new Error(`screenshots/${shot} is ${size} bytes, over the 256 KiB cap`);
+    }
   }
 }
+
+/* ---------------- Hand in ---------------- */
 
 mkdirSync(out, { recursive: true });
 cpSync(gameDir, join(out, 'game'), { recursive: true });
@@ -70,7 +110,7 @@ if (existsSync(shotDir)) cpSync(shotDir, join(out, 'screenshots'), { recursive: 
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {
-    text_max_bytes: 163840,
+    text_max_bytes: DOSSIER_TEXT_MAX,
     screenshots: { max: SHOT_MAX, max_bytes: SHOT_MAX_BYTES },
     game_max_files: GAME_MAX_FILES,
     game_max_bytes: GAME_MAX_BYTES,
@@ -78,4 +118,6 @@ writeFileSync(
   }),
 );
 
-console.log(`Solmar Bay handed in: game/ (${gameSize.files} entries, ${gameSize.bytes} bytes) + screenshots/ -> ${out}`);
+console.log(
+  `Solmar Bay v2 handed in: game/ (${gameSize.entries} entries, ${gameSize.bytes} bytes) + ${shotCount} screenshots -> ${out}`,
+);

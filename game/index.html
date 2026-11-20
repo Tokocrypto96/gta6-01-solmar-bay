@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solmar Bay — an open-world crime story</title>
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b1020; font-family: 'Segoe UI', system-ui, sans-serif; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a0f1e; font-family: 'Segoe UI', system-ui, sans-serif; }
   #app { position: fixed; inset: 0; }
   canvas.webgl { display: block; width: 100%; height: 100%; }
   .hidden { display: none !important; }
@@ -20,17 +20,43 @@
   #wanted .star.lit { background: #ffd21f; opacity: 1; filter: drop-shadow(0 0 6px rgba(255,210,31,.9)); }
   #wanted .star.hot { background: #ff5347; animation: blink .5s steps(2) infinite; }
   @keyframes blink { 50% { opacity: .25; } }
+  /* Rank / RP bar under the stars. */
+  #rankbar { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); width: 240px; text-align: center; }
+  #rankName { font-size: 12px; font-weight: 800; letter-spacing: 2px; color: #ffd76a; }
+  #rankTrack { margin-top: 4px; height: 7px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.45); border-radius: 4px; overflow: hidden; }
+  #rankFill { height: 100%; width: 0%; background: linear-gradient(90deg,#ff9d2e,#ffd21f); transition: width .4s; }
+  #rankNext { margin-top: 3px; font-size: 11px; color: #cfe3ff; font-weight: 600; }
+  /* District + radio readout under the rank bar. */
+  #area { position: absolute; top: 108px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #areaName { font-size: 19px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #fff; }
+  #areaSub { font-size: 12px; color: #ffd76a; font-weight: 700; letter-spacing: 1px; }
   #healthbar { position: absolute; top: 88px; right: 18px; width: 180px; height: 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; overflow: hidden; }
   #healthfill { height: 100%; width: 100%; background: linear-gradient(90deg,#37d67a,#a5f2b0); }
   #healthbar.low #healthfill { background: linear-gradient(90deg,#e5484d,#ff8a7a); }
   #objective { position: absolute; top: 14px; left: 18px; max-width: 340px; background: rgba(8,12,28,.62); border-left: 4px solid #ffd21f; border-radius: 4px; padding: 9px 12px; font-size: 14px; line-height: 1.45; }
   #objective .title { font-weight: 800; color: #ffd21f; letter-spacing: .5px; text-transform: uppercase; font-size: 12px; }
   #objective .dist { color: #9fd8ff; font-weight: 700; }
+  /* Mission tracker: the whole job as a checklist, under the objective. */
+  #tracker { position: absolute; top: 118px; left: 18px; width: 300px; background: rgba(8,12,28,.55); border-radius: 6px; padding: 8px 12px 9px; }
+  #tracker .thead { display: flex; justify-content: space-between; align-items: baseline; }
+  #trackerTitle { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; color: #9fd8ff; text-transform: uppercase; }
+  #trackerReward { font-size: 11px; font-weight: 800; color: #7CFC9A; }
+  #trackerList { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; line-height: 1.5; }
+  #trackerList li { display: flex; gap: 7px; color: #aebadd; }
+  #trackerList li .mark { width: 14px; text-align: center; flex: none; }
+  #trackerList li.done { color: #6f7f9f; text-decoration: line-through; }
+  #trackerList li.done .mark { color: #37d67a; text-decoration: none; }
+  #trackerList li.current { color: #fff; font-weight: 700; }
+  #trackerList li.current .mark { color: #ffd21f; }
   #minimap { position: absolute; left: 18px; bottom: 18px; width: 208px; height: 208px; border-radius: 50%; border: 3px solid rgba(255,255,255,.75); box-shadow: 0 0 0 4px rgba(0,0,0,.45), 0 4px 18px rgba(0,0,0,.5); background: #10182a; }
   #speedo { position: absolute; right: 18px; bottom: 18px; text-align: right; font-weight: 800; }
   #speedo .num { font-size: 42px; line-height: 1; }
   #speedo .unit { font-size: 13px; color: #cfe3ff; }
   #speedo .carname { font-size: 13px; color: #ffd76a; font-weight: 700; }
+  /* Side panel: the car or weapon in hand, above the speedometer. */
+  #sidepanel { position: absolute; right: 18px; bottom: 118px; width: 210px; background: rgba(8,12,28,.55); border-right: 4px solid #ff9d2e; border-radius: 4px; padding: 7px 11px; text-align: right; }
+  #sideTitle { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; color: #ff9d2e; text-transform: uppercase; }
+  #sideText { font-size: 13px; font-weight: 600; color: #eef3ff; margin-top: 2px; line-height: 1.45; }
   #crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; }
   #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #fff; box-shadow: 0 0 3px #000; }
   #crosshair::before { left: 10px; top: 0; width: 2px; height: 22px; }
@@ -41,10 +67,10 @@
   #feed { position: absolute; left: 18px; bottom: 240px; font-size: 13px; line-height: 1.7; max-width: 320px; }
   #feed div { background: rgba(8,12,28,.55); padding: 2px 8px; border-radius: 4px; margin-top: 3px; display: inline-block; }
   #damage { position: fixed; inset: 0; pointer-events: none; z-index: 6; box-shadow: inset 0 0 120px 40px rgba(220,20,20,.55); opacity: 0; transition: opacity .12s; }
-  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 4; box-shadow: inset 0 0 140px rgba(0,0,10,.55); }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 4; box-shadow: inset 0 0 140px rgba(20,0,10,.5); }
 
   /* ---------- Screens ---------- */
-  .screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #fff; text-align: center; background: radial-gradient(ellipse at 50% 30%, rgba(20,40,90,.88), rgba(4,6,16,.96)); }
+  .screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #fff; text-align: center; background: radial-gradient(ellipse at 50% 30%, rgba(90,40,70,.88), rgba(10,4,16,.96)); }
   .screen h1 { margin: 0; font-size: 64px; letter-spacing: 6px; font-weight: 900; background: linear-gradient(180deg,#ffe27a,#ff9d2e 55%,#ff5f6d); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 4px 30px rgba(255,120,40,.25); }
   .screen h2 { margin: 6px 0 0; font-size: 17px; font-weight: 600; letter-spacing: 4px; text-transform: uppercase; color: #9fd8ff; }
   .screen p.tag { margin: 18px 0 4px; max-width: 560px; font-size: 15px; line-height: 1.6; color: #dfe8ff; }
@@ -54,7 +80,7 @@
   .menu button.primary { background: linear-gradient(180deg,#f6a723,#d97b06); }
   .menu button.primary:hover { background: linear-gradient(180deg,#ffb93e,#e8890c); }
   .menu button:disabled { opacity: .4; cursor: default; }
-  .screen .foot { margin-top: 26px; font-size: 12px; color: #8fa3c8; max-width: 520px; line-height: 1.6; }
+  .screen .foot { margin-top: 26px; font-size: 12px; color: #c8a3b8; max-width: 520px; line-height: 1.6; }
   .screen .keys { margin-top: 14px; font-size: 13px; color: #cfe0ff; line-height: 1.9; background: rgba(255,255,255,.06); border-radius: 8px; padding: 10px 18px; }
   .screen .keys b { color: #ffd21f; }
   .screen .saveinfo { margin-top: 16px; font-size: 13px; color: #9fd8ff; }
@@ -69,10 +95,17 @@
 
 <div id="hud" class="hidden">
   <div id="objective"><div class="title" id="objTitle">Free roam</div><div id="objText">Explore Solmar Bay. Steal a car, earn cash, stay out of trouble.</div></div>
+  <div id="tracker" class="hidden">
+    <div class="thead"><span id="trackerTitle">Mission</span><span id="trackerReward"></span></div>
+    <ul id="trackerList"></ul>
+  </div>
   <div id="wanted"><span class="star" data-s="1"></span><span class="star" data-s="2"></span><span class="star" data-s="3"></span><span class="star" data-s="4"></span><span class="star" data-s="5"></span></div>
+  <div id="rankbar"><div id="rankName">RANK 1 · DOCK RAT</div><div id="rankTrack"><div id="rankFill"></div></div><div id="rankNext"></div></div>
+  <div id="area"><div id="areaName">Solmar Bay</div><div id="areaSub"></div></div>
   <div id="money"><div class="cash" id="cash">$0</div><div class="sub" id="cashSub"></div></div>
   <div id="healthbar"><div id="healthfill"></div></div>
   <canvas id="minimap" width="208" height="208"></canvas>
+  <div id="sidepanel" class="hidden"><div id="sideTitle"></div><div id="sideText"></div></div>
   <div id="speedo" class="hidden"><div class="carname" id="carName"></div><div class="num" id="speedNum">0</div><div class="unit">km/h &nbsp;·&nbsp; E to exit</div></div>
   <div id="crosshair" class="hidden"></div>
   <div id="hint"></div>
@@ -98,7 +131,8 @@
     <b>P / Esc</b> pause &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>H</b> hide HUD &nbsp;·&nbsp; <b>R</b> restart mission
   </div>
   <div class="foot">A complete open world in your browser — drive, steal, run missions, outrun the
-  police. Progress saves automatically. An original game built for the make.fun GTA 6 bounty.
+  police, and climb the street ranks from Dock Rat to King of the Bay. Progress saves
+  automatically. An original game built for the make.fun GTA 6 bounty.
   No Rockstar content, no network: everything runs from these files.</div>
 </div>
 

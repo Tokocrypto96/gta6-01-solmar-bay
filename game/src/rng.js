@@ -1,43 +1,50 @@
-// Solmar Bay — tiny deterministic RNG (mulberry32) so the city, the traffic and the
-// screenshot scenes are the same for the same seed, every run.
-/** A seeded random function returning floats in [0, 1). */
+// Solmar Bay — deterministic randomness (v2).
+//
+// The city, the traffic and the staged screenshot scenes are all dealt from
+// one mulberry32 stream, so a given seed always deals the same bay: same
+// buildings, same palms, same shells. Math.random is only ever used for
+// things that are allowed to differ run to run (fare payouts, walk phases).
+
+/** mulberry32: a small, fast, seedable PRNG. Returns floats in [0, 1). */
 export function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  let state = seed >>> 0;
+  return function next() {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), 1 | t);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-/** Integer in [min, max] from a seeded rng. */
+/** Integer in [min, max], both ends included, from a seeded stream. */
 export function randInt(rng, min, max) {
   return min + Math.floor(rng() * (max - min + 1));
 }
 
-/** One element of an array, from a seeded rng. */
-export function pick(rng, arr) {
-  return arr[Math.floor(rng() * arr.length)];
-}
-
-/** Float in [min, max) from a seeded rng. */
+/** Float in [min, max) from a seeded stream. */
 export function randRange(rng, min, max) {
   return min + rng() * (max - min);
 }
 
-/** True with probability p (0..1) from a seeded rng. */
+/** One element of an array, chosen by a seeded stream. */
+export function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+/** True with probability p, rolled on a seeded stream. */
 export function chance(rng, p) {
   return rng() < p;
 }
 
-/** Shuffle a copy of an array in place order, from a seeded rng. */
+/** A shuffled copy of an array (the original is left alone). */
 export function shuffle(rng, arr) {
-  const out = [...arr];
+  const out = arr.slice();
   for (let i = out.length - 1; i > 0; i -= 1) {
     const j = Math.floor(rng() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
+    const tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
   }
   return out;
 }

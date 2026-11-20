@@ -1,27 +1,37 @@
-// Solmar Bay — keyboard and mouse input. Tracks held keys, edge-triggered presses,
-// and a drag-to-orbit camera (pointer lock is offered on click, drag works always,
-// so the game is playable in a screenshot browser too).
+// Solmar Bay — keyboard & mouse input (v2).
+//
+// Two flavours of key state: held keys (driving, walking) and edge-triggered
+// presses that live for exactly one frame (steal a car, pause, punch). The
+// mouse orbits the camera two ways — drag anywhere, or click once for
+// pointer lock — so the game stays playable in a plain screenshot browser
+// where pointer lock may never engage.
+
 export class Input {
   constructor(canvas) {
+    this.canvas = canvas;
+    /** Codes currently held down. */
     this.keys = new Set();
+    /** Codes that went down this frame; cleared by endFrame(). */
     this.pressed = new Set();
     this.mouseDX = 0;
     this.mouseDY = 0;
     this.mouseDown = false;
+    /** Left button went down this frame (a shot, once armed). */
     this.clicked = false;
     this.dragging = false;
     this.lastX = 0;
     this.lastY = 0;
     this.locked = false;
-    this.canvas = canvas;
 
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.keys.add(e.code);
       this.pressed.add(e.code);
+      // Keep the page itself from scrolling on the keys the game uses.
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    // Losing focus mid-chase must not leave a key stuck down forever.
     window.addEventListener('blur', () => this.keys.clear());
 
     canvas.addEventListener('mousedown', (e) => {
@@ -29,11 +39,11 @@ export class Input {
       this.dragging = true;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
-      // Only the left button shoots: a right-click drag used to queue a shot
-      // that fired on the next left click (stale click consumed a frame late).
+      // Only the left button counts as a click: a right-button drag orbits
+      // the camera and must not queue a shot that fires a frame late.
       if (e.button === 0) this.clicked = true;
     });
-    // Right-drag orbits the camera too; never pop the browser context menu.
+    // Right-drag orbits too — swallow the context menu so it never pops.
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mouseup', () => {
       this.mouseDown = false;
@@ -62,33 +72,32 @@ export class Input {
     document.addEventListener('pointerlockerror', () => { this.locked = false; });
   }
 
-  /** Held this frame (WASD and arrows both count). */
+  /** True while any of the given keys is held (WASD and arrows both count). */
   down(...codes) {
     return codes.some((c) => this.keys.has(c));
   }
 
-  /** True only on the frame the key went down. */
+  /** True only on the frame one of the given keys went down. */
   wasPressed(...codes) {
     return codes.some((c) => this.pressed.has(c));
   }
 
-  /** Mouse movement since last frame, in pixels; resets when read. */
+  /** Mouse travel since the last read, in pixels; reading resets it. */
   consumeMouse() {
-    const dx = this.mouseDX;
-    const dy = this.mouseDY;
+    const out = { dx: this.mouseDX, dy: this.mouseDY };
     this.mouseDX = 0;
     this.mouseDY = 0;
-    return { dx, dy };
+    return out;
   }
 
-  /** True only on the frame the left button went down. */
+  /** True only on the frame the left button went down; reading clears it. */
   consumeClick() {
-    const c = this.clicked;
+    const was = this.clicked;
     this.clicked = false;
-    return c;
+    return was;
   }
 
-  /** Call at the end of each frame so edge presses last exactly one frame. */
+  /** End of frame: edge-triggered presses live exactly one frame. */
   endFrame() {
     this.pressed.clear();
   }
